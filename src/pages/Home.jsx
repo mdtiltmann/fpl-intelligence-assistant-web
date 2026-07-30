@@ -3,6 +3,17 @@ import { useFplData } from "../lib/FplDataContext.jsx";
 import { useManagerData } from "../lib/useManagerData.js";
 import { getManagerId, setManagerId } from "../lib/storage.js";
 
+/** Accepts either a bare ID ("2123506") or a full FPL URL
+ * (".../entry/2123506/..." or "...entry/2123506") and pulls out the
+ * numeric manager ID either way — pasting the whole address bar URL is
+ * an easy, common mistake. Returns null if no ID can be found. */
+function extractManagerId(input) {
+  const trimmed = input.trim();
+  if (/^\d+$/.test(trimmed)) return trimmed;
+  const match = trimmed.match(/entry\/(\d+)/);
+  return match ? match[1] : null;
+}
+
 export default function Home() {
   const { players, loading, error, refresh, lastFetchedAt } = useFplData();
   const playersById = Object.fromEntries(players.map((p) => [p.id, p]));
@@ -10,12 +21,21 @@ export default function Home() {
   const [savedId, setSavedId] = useState(getManagerId());
   const [inputId, setInputId] = useState(savedId);
   const [justSaved, setJustSaved] = useState(false);
+  const [saveError, setSaveError] = useState(null);
 
   const handleSave = (e) => {
     e.preventDefault();
-    const trimmed = inputId.trim();
-    setManagerId(trimmed);
-    setSavedId(trimmed);
+    const extracted = extractManagerId(inputId);
+    if (!extracted) {
+      setSaveError(
+        "Couldn't find a manager ID in that. Enter just the number (e.g. 2123506), or paste the full URL from your team page."
+      );
+      return;
+    }
+    setSaveError(null);
+    setInputId(extracted);
+    setManagerId(extracted);
+    setSavedId(extracted);
     setJustSaved(true);
     refreshManager();
     setTimeout(() => setJustSaved(false), 2000);
@@ -39,6 +59,7 @@ export default function Home() {
           <button type="submit">{savedId ? "Save & switch" : "Save"}</button>
           {justSaved && <span className="muted">✓ Saved</span>}
         </form>
+        {saveError && <p className="warning">{saveError}</p>}
         {savedId && <p className="muted">Currently using manager ID: {savedId}</p>}
       </div>
 
