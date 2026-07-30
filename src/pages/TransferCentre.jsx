@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { useFplData } from "../lib/FplDataContext.jsx";
 import { useManagerData } from "../lib/useManagerData.js";
-import { estimateExpectedPoints, upcomingFixturesForTeam, suggestReplacements } from "../lib/analytics.js";
+import { estimatePointsForDraft, upcomingFixturesForTeam, suggestReplacements, explainPlayerPick } from "../lib/analytics.js";
 import { getManagerId } from "../lib/storage.js";
 import ManagerGate from "../components/ManagerGate.jsx";
 import InfoBanner from "../components/InfoBanner.jsx";
@@ -12,17 +12,22 @@ export default function TransferCentre() {
   const { profile, squad, seasonNotStarted, error, loading } = useManagerData(playersById);
   const [horizon, setHorizon] = useState(4);
   const [freeTransfers, setFreeTransfers] = useState(1);
+  const [expandedIndex, setExpandedIndex] = useState(null);
 
   const bankM = profile?.last_deadline_bank != null ? profile.last_deadline_bank / 10 : 0;
+
+  const upcomingByTeam = useMemo(() => {
+    const cache = {};
+    return (teamId) => (cache[teamId] ||= upcomingFixturesForTeam(fixtures, teamsById, teamId, horizon));
+  }, [fixtures, teamsById, horizon]);
 
   const expectedPointsById = useMemo(() => {
     const result = {};
     for (const p of players) {
-      const upcoming = upcomingFixturesForTeam(fixtures, teamsById, p.team, horizon);
-      result[p.id] = estimateExpectedPoints(p, gameweeksPlayed, upcoming);
+      result[p.id] = estimatePointsForDraft(p, gameweeksPlayed, upcomingByTeam(p.team));
     }
     return result;
-  }, [players, fixtures, teamsById, gameweeksPlayed, horizon]);
+  }, [players, gameweeksPlayed, upcomingByTeam]);
 
   const suggestions = useMemo(() => {
     if (!squad.length) return [];
@@ -66,17 +71,41 @@ export default function TransferCentre() {
       {suggestions.length === 0 ? (
         <div className="card">No transfer clears the minimum-gain threshold this week.</div>
       ) : (
-        suggestions.slice(0, 10).map((s, i) => (
-          <div className="card" key={i}>
-            <p><strong>OUT:</strong> {s.playerOut.web_name} → <strong>IN:</strong> {s.playerIn.web_name}</p>
-            <div className="metric-row">
-              <div className="metric"><div className="label">Gain (before hit)</div><div className="value">{s.expectedGainBeforeHit > 0 ? "+" : ""}{s.expectedGainBeforeHit}</div></div>
-              <div className="metric"><div className="label">Hit cost</div><div className="value">{s.hitCost ? `-${s.hitCost}` : "0"}</div></div>
-              <div className="metric"><div className="label">Gain (after hit)</div><div className="value">{s.expectedGainAfterHit > 0 ? "+" : ""}{s.expectedGainAfterHit}</div></div>
+        suggestions.slice(0, 10).map((s, i) => {
+          const expanded = expandedIndex === i;
+          const outReasons = explainPlayerPick(
+            s.playerOut, teamsById[s.playerOut.team], upcomingByTeam(s.playerOut.team), expectedPointsById[s.playerOut.id], gameweeksPlayed
+          );
+          const inReasons = explainPlayerPick(
+            s.playerIn, teamsById[s.playerIn.team], upcomingByTeam(s.playerIn.team), expectedPointsById[s.playerIn.id], gameweeksPlayed
+          );
+          return (
+            <div className="card" key={i}>
+              <p><strong>OUT:</strong> {s.playerOut.web_name} → <strong>IN:</strong> {s.playerIn.web_name}</p>
+              <div className="metric-row">
+                <div className="metric"><div className="label">Gain (before hit)</div><div className="value">{s.expectedGainBeforeHit > 0 ? "+" : ""}{s.expectedGainBeforeHit}</div></div>
+                <div className="metric"><div className="label">Hit cost</div><div className="value">{s.hitCost ? `-${s.hitCost}` : "0"}</div></div>
+                <div className="metric"><div className="label">Gain (after hit)</div><div className="value">{s.expectedGainAfterHit > 0 ? "+" : ""}{s.expectedGainAfterHit}</div></div>
+              </div>
+              <p className="muted">Cash impact: {s.cashDeltaM >= 0 ? "+" : ""}{s.cashDeltaM}m in the bank afterwards.</p>
+              <button onClick={() => setExpandedIndex(expanded ? null : i)}>
+                {expanded ? "Hide detailed reasoning" : "Why sell / why buy?"}
+              </button>
+              {expanded && (
+                <div className="metric-row" style={{ marginTop: "0.75rem" }}>
+                  <div className="card" style={{ flex: 1 }}>
+                    <strong>Why sell {s.playerOut.web_name}</strong>
+                    <ul>{outReasons.map((r, j) => <li key={j} className="muted" style={{ fontSize: "0.85rem" }}>{r}</li>)}</ul>
+                  </div>
+                  <div className="card" style={{ flex: 1 }}>
+                    <strong>Why buy {s.playerIn.web_name}</strong>
+                    <ul>{inReasons.map((r, j) => <li key={j} className="muted" style={{ fontSize: "0.85rem" }}>{r}</li>)}</ul>
+                  </div>
+                </div>
+              )}
             </div>
-            <p className="muted">Cash impact: {s.cashDeltaM >= 0 ? "+" : ""}{s.cashDeltaM}m in the bank afterwards.</p>
-          </div>
-        ))
+          );
+        })
       )}
       <p className="muted">
         Covers single-transfer suggestions with budget/hit-cost math. Never auto-applied — you decide.

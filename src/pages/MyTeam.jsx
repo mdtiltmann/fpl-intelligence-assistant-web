@@ -2,11 +2,12 @@ import React, { useMemo, useState } from "react";
 import { useFplData } from "../lib/FplDataContext.jsx";
 import { useManagerData } from "../lib/useManagerData.js";
 import {
-  estimateExpectedPoints,
+  estimatePointsForDraft,
   upcomingFixturesForTeam,
   pickBestXi,
   computeTeamRating,
   positionName,
+  explainPlayerPick,
 } from "../lib/analytics.js";
 import { getManagerId } from "../lib/storage.js";
 import ManagerGate from "../components/ManagerGate.jsx";
@@ -16,15 +17,20 @@ export default function MyTeam() {
   const playersById = useMemo(() => Object.fromEntries(players.map((p) => [p.id, p])), [players]);
   const { squad, seasonNotStarted, error, loading } = useManagerData(playersById);
   const [horizon, setHorizon] = useState(4);
+  const [expandedId, setExpandedId] = useState(null);
+
+  const upcomingByTeam = useMemo(() => {
+    const cache = {};
+    return (teamId) => (cache[teamId] ||= upcomingFixturesForTeam(fixtures, teamsById, teamId, horizon));
+  }, [fixtures, teamsById, horizon]);
 
   const expectedPointsById = useMemo(() => {
     const result = {};
     for (const p of squad) {
-      const upcoming = upcomingFixturesForTeam(fixtures, teamsById, p.team, horizon);
-      result[p.id] = estimateExpectedPoints(p, gameweeksPlayed, upcoming);
+      result[p.id] = estimatePointsForDraft(p, gameweeksPlayed, upcomingByTeam(p.team));
     }
     return result;
-  }, [squad, fixtures, teamsById, gameweeksPlayed, horizon]);
+  }, [squad, gameweeksPlayed, upcomingByTeam]);
 
   const selection = useMemo(
     () => (squad.length === 15 ? pickBestXi(squad, expectedPointsById) : null),
@@ -32,8 +38,8 @@ export default function MyTeam() {
   );
 
   const rating = useMemo(
-    () => (selection ? computeTeamRating(squad, selection.starters, selection.bench, expectedPointsById, gameweeksPlayed) : null),
-    [selection, squad, expectedPointsById, gameweeksPlayed]
+    () => (selection ? computeTeamRating(squad, selection.starters, selection.bench, expectedPointsById, gameweeksPlayed, fixtures, teamsById, horizon) : null),
+    [selection, squad, expectedPointsById, gameweeksPlayed, fixtures, teamsById, horizon]
   );
 
   // ManagerGate has no hooks of its own, so calling it directly (rather
@@ -54,6 +60,34 @@ export default function MyTeam() {
       </div>
     );
   }
+
+  const renderRow = (p) => {
+    const expanded = expandedId === p.id;
+    return (
+      <React.Fragment key={p.id}>
+        <tr>
+          <td>{p.web_name}</td>
+          <td>{positionName(p.element_type)}</td>
+          <td>{teamsById[p.team]?.short_name}</td>
+          <td>£{(p.now_cost / 10).toFixed(1)}m</td>
+          <td>{expectedPointsById[p.id]?.central.toFixed(1)}</td>
+          <td>{p.status}</td>
+          <td><button onClick={() => setExpandedId(expanded ? null : p.id)}>{expanded ? "Hide" : "Why?"}</button></td>
+        </tr>
+        {expanded && (
+          <tr>
+            <td colSpan={7} style={{ background: "rgba(79,140,255,0.06)" }}>
+              <ul style={{ margin: "0.4rem 0" }}>
+                {explainPlayerPick(p, teamsById[p.team], upcomingByTeam(p.team), expectedPointsById[p.id], gameweeksPlayed).map((r, i) => (
+                  <li key={i} className="muted" style={{ fontSize: "0.85rem" }}>{r}</li>
+                ))}
+              </ul>
+            </td>
+          </tr>
+        )}
+      </React.Fragment>
+    );
+  };
 
   return (
     <div>
@@ -80,43 +114,24 @@ export default function MyTeam() {
         <table>
           <thead>
             <tr>
-              <th>Player</th><th>Pos</th><th>Club</th><th>Price</th><th>Expected pts</th><th>Status</th>
+              <th>Player</th><th>Pos</th><th>Club</th><th>Price</th><th>Expected pts</th><th>Status</th><th></th>
             </tr>
           </thead>
-          <tbody>
-            {selection.starters.map((p) => (
-              <tr key={p.id}>
-                <td>{p.web_name}</td>
-                <td>{positionName(p.element_type)}</td>
-                <td>{teamsById[p.team]?.short_name}</td>
-                <td>£{(p.now_cost / 10).toFixed(1)}m</td>
-                <td>{expectedPointsById[p.id]?.central.toFixed(1)}</td>
-                <td>{p.status}</td>
-              </tr>
-            ))}
-          </tbody>
+          <tbody>{selection.starters.map(renderRow)}</tbody>
         </table>
       </div>
 
       <div className="card">
         <h3>Bench (in play order)</h3>
         <table>
-          <thead><tr><th>Player</th><th>Pos</th><th>Expected pts</th><th>Status</th></tr></thead>
-          <tbody>
-            {selection.bench.map((p) => (
-              <tr key={p.id}>
-                <td>{p.web_name}</td>
-                <td>{positionName(p.element_type)}</td>
-                <td>{expectedPointsById[p.id]?.central.toFixed(1)}</td>
-                <td>{p.status}</td>
-              </tr>
-            ))}
-          </tbody>
+          <thead><tr><th>Player</th><th>Pos</th><th>Club</th><th>Price</th><th>Expected pts</th><th>Status</th><th></th></tr></thead>
+          <tbody>{selection.bench.map(renderRow)}</tbody>
         </table>
       </div>
       <p className="muted">
         Starting XI/bench order is a greedy expected-points heuristic, not a full constraint solver.
-        Never auto-applied to your real FPL team.
+        Never auto-applied to your real FPL team. Click "Why?" on any player for the full reasoning
+        behind their projection (price, form, fixtures, team strength).
       </p>
     </div>
   );

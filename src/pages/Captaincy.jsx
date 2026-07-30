@@ -2,12 +2,13 @@ import React, { useMemo, useState } from "react";
 import { useFplData } from "../lib/FplDataContext.jsx";
 import { useManagerData } from "../lib/useManagerData.js";
 import {
-  estimateExpectedPoints,
+  estimatePointsForDraft,
   upcomingFixturesForTeam,
   pickBestXi,
   rankCaptains,
   safestCaptain,
   highestUpsideCaptain,
+  explainPlayerPick,
 } from "../lib/analytics.js";
 import { getManagerId } from "../lib/storage.js";
 import ManagerGate from "../components/ManagerGate.jsx";
@@ -17,15 +18,20 @@ export default function Captaincy() {
   const playersById = useMemo(() => Object.fromEntries(players.map((p) => [p.id, p])), [players]);
   const { squad, seasonNotStarted, error, loading } = useManagerData(playersById);
   const [horizon, setHorizon] = useState(4);
+  const [expandedId, setExpandedId] = useState(null);
+
+  const upcomingByTeam = useMemo(() => {
+    const cache = {};
+    return (teamId) => (cache[teamId] ||= upcomingFixturesForTeam(fixtures, teamsById, teamId, horizon));
+  }, [fixtures, teamsById, horizon]);
 
   const expectedPointsById = useMemo(() => {
     const result = {};
     for (const p of squad) {
-      const upcoming = upcomingFixturesForTeam(fixtures, teamsById, p.team, horizon);
-      result[p.id] = estimateExpectedPoints(p, gameweeksPlayed, upcoming);
+      result[p.id] = estimatePointsForDraft(p, gameweeksPlayed, upcomingByTeam(p.team));
     }
     return result;
-  }, [squad, fixtures, teamsById, gameweeksPlayed, horizon]);
+  }, [squad, gameweeksPlayed, upcomingByTeam]);
 
   const selection = useMemo(
     () => (squad.length === 15 ? pickBestXi(squad, expectedPointsById) : null),
@@ -88,18 +94,35 @@ export default function Captaincy() {
       <div className="card">
         <h3>Full ranking</h3>
         <table>
-          <thead><tr><th>Player</th><th>Expected pts</th><th>Floor</th><th>Ceiling</th><th>Security</th><th>Risk note</th></tr></thead>
+          <thead><tr><th>Player</th><th>Expected pts</th><th>Floor</th><th>Ceiling</th><th>Security</th><th>Risk note</th><th></th></tr></thead>
           <tbody>
-            {options.map((o) => (
-              <tr key={o.player.id}>
-                <td>{o.player.web_name}</td>
-                <td>{o.expectedPoints.toFixed(1)}</td>
-                <td>{o.floor.toFixed(1)}</td>
-                <td>{o.ceiling.toFixed(1)}</td>
-                <td>{o.security.toFixed(0)}/100</td>
-                <td>{o.riskNote}</td>
-              </tr>
-            ))}
+            {options.map((o) => {
+              const expanded = expandedId === o.player.id;
+              return (
+                <React.Fragment key={o.player.id}>
+                  <tr>
+                    <td>{o.player.web_name}</td>
+                    <td>{o.expectedPoints.toFixed(1)}</td>
+                    <td>{o.floor.toFixed(1)}</td>
+                    <td>{o.ceiling.toFixed(1)}</td>
+                    <td>{o.security.toFixed(0)}/100</td>
+                    <td>{o.riskNote}</td>
+                    <td><button onClick={() => setExpandedId(expanded ? null : o.player.id)}>{expanded ? "Hide" : "Why?"}</button></td>
+                  </tr>
+                  {expanded && (
+                    <tr>
+                      <td colSpan={7} style={{ background: "rgba(79,140,255,0.06)" }}>
+                        <ul style={{ margin: "0.4rem 0" }}>
+                          {explainPlayerPick(o.player, teamsById[o.player.team], upcomingByTeam(o.player.team), expectedPointsById[o.player.id], gameweeksPlayed).map((r, i) => (
+                            <li key={i} className="muted" style={{ fontSize: "0.85rem" }}>{r}</li>
+                          ))}
+                        </ul>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>

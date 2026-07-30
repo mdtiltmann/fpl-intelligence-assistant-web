@@ -83,6 +83,149 @@ export function estimateExpectedPoints(player, gameweeksPlayed, upcomingFixtures
   };
 }
 
+/** Pre-season fallback: our own model has nothing to work with at 0
+ * minutes played (everything reduces to a flat league-average prior), so
+ * before any gameweek is played this leans on FPL's own official
+ * "expected points next gameweek" figure (ep_next) instead, scaled to the
+ * requested horizon. Once real minutes exist, uses the full model above,
+ * which accounts for fixture difficulty over the whole horizon rather
+ * than just the next game. */
+export function estimatePointsForDraft(player, gameweeksPlayed, upcomingFixtures, overrideStatus) {
+  if (gameweeksPlayed > 0) {
+    return estimateExpectedPoints(player, gameweeksPlayed, upcomingFixtures, overrideStatus);
+  }
+  const status = overrideStatus || player.status;
+  const epNext = Number(player.ep_next) || 0;
+  const horizon = upcomingFixtures?.length || 1;
+  const central = epNext * horizon * (status === "a" ? 1 : 0.3);
+  return {
+    central: Math.round(central * 100) / 100,
+    low: Math.round(central * 0.6 * 100) / 100,
+    high: Math.round(central * 1.4 * 100) / 100,
+    horizon,
+    confidence: 0.35,
+  };
+}
+
+const STATUS_LABELS = {
+  a: "Available",
+  d: "Doubtful",
+  i: "Injured",
+  s: "Suspended",
+  u: "Unavailable",
+  n: "Not in squad",
+};
+
+function priceTier(priceM, elementType) {
+  // Rough, position-relative bands — not an official FPL categorisation.
+  const premiumFloor = { 1: 5.0, 2: 6.0, 3: 8.5, 4: 8.5 }[elementType] ?? 8.0;
+  const budgetCeiling = { 1: 4.5, 2: 4.5, 3: 5.5, 4: 5.5 }[elementType] ?? 5.0;
+  if (priceM >= premiumFloor) return "premium";
+  if (priceM <= budgetCeiling) return "budget";
+  return "mid-price";
+}
+
+/** Builds a plain-English "why this player" explanation covering price,
+ * form, upcoming fixtures, and team strength, per the user's request that
+ * every recommendation explain itself rather than just show a number.
+ * Returns an array of strings, most important first. */
+export function explainPlayerPick(player, team, upcomingFixtures, estimate, gameweeksPlayed) {
+  const reasons = [];
+  const price = player.now_cost / 10;
+  const tier = priceTier(price, player.element_type);
+
+  reasons.push(
+    `Price: £${price.toFixed(1)}m (${tier} for a ${positionName(player.element_type)}).`
+  );
+
+  if (gameweeksPlayed > 0) {
+    reasons.push(
+      `Form: ${player.form} points/game recently (FPL's rolling average), ${player.total_points} points this season so far.`
+    );
+  } else {
+    reasons.push(
+      `No matches played yet this season. Last season: ${player.total_points} points total. ` +
+        `FPL's own next-gameweek projection: ${Number(player.ep_next || 0).toFixed(1)} points.`
+    );
+  }
+
+  if (upcomingFixtures?.length) {
+    const fixtureList = upcomingFixtures
+      .map((f) => `${f.opponentShortName} (${f.isHome ? "H" : "A"}, difficulty ${f.difficulty})`)
+      .join(", ");
+    const avg = (upcomingFixtures.reduce((s, f) => s + f.difficulty, 0) / upcomingFixtures.length).toFixed(1);
+    reasons.push(`Upcoming fixtures: ${fixtureList} — average difficulty ${avg}/5 (1=easiest, 5=hardest).`);
+  } else {
+    reasons.push("No upcoming fixtures found in the selected horizon (blank gameweek or data not yet available).");
+  }
+
+  if (team) {
+    reasons.push(
+      `${team.name}'s overall strength rating (last season): ${team.strength_overall_home}/5 at home, ` +
+        `${team.strength_overall_away}/5 away — team-level form for the new season isn't published yet.`
+    );
+  }
+
+  const ownership = Number(player.selected_by_percent) || 0;
+  reasons.push(
+    `Ownership: selected by ${ownership.toFixed(1)}% of managers` +
+      (ownership < 5 ? " — a differential pick." : ownership > 30 ? " — a heavily-owned template pick." : ".")
+  );
+
+  if (player.status !== "a") {
+    reasons.push(
+      `⚠️ Official status: ${STATUS_LABELS[player.status] || player.status}.` +
+        (player.news ? ` ${player.news}` : "")
+    );
+  }
+
+  if (estimate) {
+    reasons.push(
+      `Confidence in this projection: ${(estimate.confidence * 100).toFixed(0)}%` +
+        (gameweeksPlayed === 0 ? " (low, pre-season — will improve once matches are played)." : ".")
+    );
+  }
+
+  return reasons;
+}
+
+const SQUAD_SHAPE = { 1: 2, 2: 5, 3: 5, 4: 3 };
+const MIN_REALISTIC_PRICE = 4.0;
+
+/** Greedy draft-squad builder: repeatedly takes the highest-projected
+ * still-needed player who's affordable once a minimum reserve is set
+ * aside for the remaining empty slots, respecting the club limit. Not a
+ * true optimiser (no ILP in the browser) — a reasonable, fast starting
+ * point you're expected to tweak by hand, not a guaranteed-optimal squad. */
+export function autoFillDraftSquad(players, estimatesById, budgetM, maxPerClub, excludeIds = new Set()) {
+  const counts = { 1: 0, 2: 0, 3: 0, 4: 0 };
+  const clubCounts = {};
+  const selected = [];
+  let spent = 0;
+
+  const eligible = players
+    .filter((p) => p.status === "a" && estimatesById[p.id] && !excludeIds.has(p.id))
+    .sort((a, b) => estimatesById[b.id].central - estimatesById[a.id].central);
+
+  for (const p of eligible) {
+    if (selected.length >= 15) break;
+    const pos = p.element_type;
+    if (counts[pos] >= SQUAD_SHAPE[pos]) continue;
+    if ((clubCounts[p.team] || 0) >= maxPerClub) continue;
+
+    const price = p.now_cost / 10;
+    const slotsLeftAfterThis = 15 - selected.length - 1;
+    const reserveNeeded = slotsLeftAfterThis * MIN_REALISTIC_PRICE;
+    if (spent + price + reserveNeeded > budgetM) continue;
+
+    selected.push(p);
+    counts[pos]++;
+    clubCounts[p.team] = (clubCounts[p.team] || 0) + 1;
+    spent += price;
+  }
+  return selected;
+}
+
 /** Independent fixture-difficulty calc, matching analytics/fixtures.py. */
 export function calculateDifficulty(ownStrength, opponentStrength) {
   if (!ownStrength || !opponentStrength) return 3.0;
@@ -187,7 +330,7 @@ export function highestUpsideCaptain(options) {
 }
 
 /** Nine-component transparent team rating, a lean port of recommendations/team_rating.py. */
-export function computeTeamRating(squad, starters, bench, expectedPointsById, gameweeksPlayed) {
+export function computeTeamRating(squad, starters, bench, expectedPointsById, gameweeksPlayed, fixtures, teamsById, horizon = 4) {
   const clamp = (x) => Math.max(0, Math.min(100, x));
   const components = [];
 
@@ -225,7 +368,10 @@ export function computeTeamRating(squad, starters, bench, expectedPointsById, ga
     explanation: "How much higher your best captain option's expected points are versus your squad average.",
   });
 
-  const formAvg = starters.length ? starters.reduce((s, p) => s + (p.form || 0), 0) / starters.length : 0;
+  // player.form comes from the FPL API as a string (e.g. "0.0"), not a
+  // number — must coerce explicitly or `+` silently does string
+  // concatenation instead of addition, corrupting the average into NaN.
+  const formAvg = starters.length ? starters.reduce((s, p) => s + (Number(p.form) || 0), 0) / starters.length : 0;
   components.push({
     key: "recent_form",
     label: "Recent form",
@@ -274,13 +420,44 @@ export function computeTeamRating(squad, starters, bench, expectedPointsById, ga
     explanation: `Total squad points per £1m spent: ${ppm.toFixed(1)}.`,
   });
 
-  components.push({
-    key: "fixture_quality",
-    label: "Fixture quality",
-    score: 60,
-    weight: 0.1,
-    explanation: "Neutral baseline — see the Fixtures page; not yet folded into this component in the web version.",
-  });
+  if (fixtures && teamsById) {
+    const seenClubs = new Set();
+    const clubDifficulties = [];
+    for (const p of starters) {
+      if (seenClubs.has(p.team)) continue;
+      seenClubs.add(p.team);
+      const upcoming = upcomingFixturesForTeam(fixtures, teamsById, p.team, horizon);
+      if (upcoming.length) {
+        clubDifficulties.push(upcoming.reduce((s, f) => s + f.difficulty, 0) / upcoming.length);
+      }
+    }
+    if (clubDifficulties.length) {
+      const squadAvgDifficulty = clubDifficulties.reduce((a, b) => a + b, 0) / clubDifficulties.length;
+      components.push({
+        key: "fixture_quality",
+        label: "Fixture quality",
+        score: clamp(120 - squadAvgDifficulty * 20),
+        weight: 0.1,
+        explanation: `Average official fixture difficulty across your starters' clubs over the next ${horizon} gameweek(s): ${squadAvgDifficulty.toFixed(1)} (1=easiest, 5=hardest), from ${clubDifficulties.length} distinct clubs.`,
+      });
+    } else {
+      components.push({
+        key: "fixture_quality",
+        label: "Fixture quality",
+        score: 60,
+        weight: 0.1,
+        explanation: "No upcoming fixtures found for your starters' clubs in the selected horizon.",
+      });
+    }
+  } else {
+    components.push({
+      key: "fixture_quality",
+      label: "Fixture quality",
+      score: 60,
+      weight: 0.1,
+      explanation: "Neutral baseline — fixture data wasn't supplied for this calculation.",
+    });
+  }
 
   const totalWeight = components.reduce((s, c) => s + c.weight, 0);
   const overall = components.reduce((s, c) => s + c.score * c.weight, 0) / (totalWeight || 1);

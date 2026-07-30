@@ -8,6 +8,7 @@ import PlayerExplorer from "./pages/PlayerExplorer.jsx";
 import Captaincy from "./pages/Captaincy.jsx";
 import Fixtures from "./pages/Fixtures.jsx";
 import TransferCentre from "./pages/TransferCentre.jsx";
+import DraftSquad from "./pages/DraftSquad.jsx";
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
             <Route path="/captaincy" element={<Captaincy />} />
             <Route path="/fixtures" element={<Fixtures />} />
             <Route path="/transfer-centre" element={<TransferCentre />} />
+            <Route path="/draft-squad" element={<DraftSquad />} />
           </Routes>
         </div>
       </div>

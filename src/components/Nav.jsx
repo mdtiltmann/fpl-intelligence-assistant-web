@@ -5,6 +5,7 @@ const LINKS = [
   { to: "/", label: "🏠 Home", end: true },
   { to: "/my-team", label: "📋 My Team" },
   { to: "/player-explorer", label: "🔍 Player Explorer" },
+  { to: "/draft-squad", label: "🧪 Draft Squad" },
   { to: "/captaincy", label: "👑 Captaincy" },
   { to: "/fixtures", label: "📅 Fixtures" },
   { to: "/transfer-centre", label: "🔄 Transfer Centre" },
