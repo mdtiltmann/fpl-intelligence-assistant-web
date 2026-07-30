@@ -10,22 +10,22 @@ export function useManagerData(playersById) {
   const [picks, setPicks] = useState([]);
   const [squad, setSquad] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [warning, setWarning] = useState(null);
+  const [seasonNotStarted, setSeasonNotStarted] = useState(false);
   const [error, setError] = useState(null);
 
   const refresh = useCallback(async () => {
     if (!managerId) return;
     setLoading(true);
     setError(null);
-    setWarning(null);
+    setSeasonNotStarted(false);
     try {
       const entry = await getEntry(managerId);
       setProfile(entry);
       const currentEvent = entry.current_event;
       if (!currentEvent) {
-        setWarning(
-          "Manager has no current gameweek yet (pre-season or season not started) — squad picks were not fetched."
-        );
+        // Expected pre-season state, not an error: FPL itself doesn't
+        // expose squad picks until the season's first gameweek begins.
+        setSeasonNotStarted(true);
         setPicks([]);
         setSquad([]);
         return;
@@ -33,7 +33,9 @@ export function useManagerData(playersById) {
       const picksResponse = await getEntryPicks(managerId, currentEvent);
       setPicks(picksResponse.picks || []);
     } catch (err) {
-      setError(err.message);
+      setError(
+        "Couldn't load your team from the FPL servers. This is usually temporary — try Refresh again in a moment."
+      );
     } finally {
       setLoading(false);
     }
@@ -51,7 +53,7 @@ export function useManagerData(playersById) {
     setSquad(picks.map((p) => playersById[p.element]).filter(Boolean));
   }, [picks, playersById]);
 
-  return { managerId, profile, picks, squad, loading, warning, error, refresh };
+  return { managerId, profile, picks, squad, loading, seasonNotStarted, error, refresh };
 }
 
 export function useManagerHistoryAndTransfers() {

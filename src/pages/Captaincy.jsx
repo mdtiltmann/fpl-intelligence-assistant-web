@@ -10,11 +10,12 @@ import {
   highestUpsideCaptain,
 } from "../lib/analytics.js";
 import { getManagerId } from "../lib/storage.js";
+import ManagerGate from "../components/ManagerGate.jsx";
 
 export default function Captaincy() {
   const { players, teamsById, fixtures, gameweeksPlayed } = useFplData();
   const playersById = useMemo(() => Object.fromEntries(players.map((p) => [p.id, p])), [players]);
-  const { squad, warning, error, loading } = useManagerData(playersById);
+  const { squad, seasonNotStarted, error, loading } = useManagerData(playersById);
   const [horizon, setHorizon] = useState(4);
 
   const expectedPointsById = useMemo(() => {
@@ -36,11 +37,21 @@ export default function Captaincy() {
     [selection, expectedPointsById, gameweeksPlayed]
   );
 
-  if (!getManagerId()) return <p>Set your manager ID on the Home page first.</p>;
-  if (loading) return <p>Loading…</p>;
-  if (error) return <p className="warning">{error}</p>;
-  if (warning) return <p className="warning">{warning}</p>;
-  if (!options.length) return <p>Not enough data to rank captains yet.</p>;
+  const gate = ManagerGate({
+    managerId: getManagerId(),
+    loading,
+    error,
+    seasonNotStarted,
+    hasData: options.length > 0,
+  });
+  if (gate) {
+    return (
+      <div>
+        <h1>👑 Captaincy</h1>
+        {gate}
+      </div>
+    );
+  }
 
   const safest = safestCaptain(options);
   const upside = highestUpsideCaptain(options);

@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useFplData } from "../lib/FplDataContext.jsx";
 import { useManagerData } from "../lib/useManagerData.js";
 import { getManagerId, setManagerId } from "../lib/storage.js";
+import InfoBanner from "../components/InfoBanner.jsx";
 
 /** Accepts either a bare ID ("2123506") or a full FPL URL
  * (".../entry/2123506/..." or "...entry/2123506") and pulls out the
@@ -17,7 +18,7 @@ function extractManagerId(input) {
 export default function Home() {
   const { players, loading, error, refresh, lastFetchedAt } = useFplData();
   const playersById = Object.fromEntries(players.map((p) => [p.id, p]));
-  const { profile, warning, error: managerError, refresh: refreshManager } = useManagerData(playersById);
+  const { profile, seasonNotStarted, error: managerError, refresh: refreshManager } = useManagerData(playersById);
   const [savedId, setSavedId] = useState(getManagerId());
   const [inputId, setInputId] = useState(savedId);
   const [justSaved, setJustSaved] = useState(false);
@@ -76,8 +77,14 @@ export default function Home() {
       {savedId && (
         <div className="card">
           <h3>{profile?.name || "Your team"}</h3>
-          {managerError && <p className="warning">{managerError}</p>}
-          {warning && <p className="warning">{warning}</p>}
+          {managerError && <p className="warning">⚠️ {managerError}</p>}
+          {seasonNotStarted && (
+            <InfoBanner title="Season hasn't started yet" icon="📅">
+              Your squad, team rating, and transfer suggestions will appear automatically once Gameweek 1
+              begins (deadline 21 Aug 2026) — the FPL API doesn't publish squad picks before then. Everything
+              else (Player Explorer, Fixtures) already works now.
+            </InfoBanner>
+          )}
           {profile && (
             <div className="metric-row">
               <div className="metric">

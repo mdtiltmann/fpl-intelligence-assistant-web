@@ -9,11 +9,12 @@ import {
   positionName,
 } from "../lib/analytics.js";
 import { getManagerId } from "../lib/storage.js";
+import ManagerGate from "../components/ManagerGate.jsx";
 
 export default function MyTeam() {
   const { players, teamsById, fixtures, gameweeksPlayed } = useFplData();
   const playersById = useMemo(() => Object.fromEntries(players.map((p) => [p.id, p])), [players]);
-  const { squad, warning, error, loading } = useManagerData(playersById);
+  const { squad, seasonNotStarted, error, loading } = useManagerData(playersById);
   const [horizon, setHorizon] = useState(4);
 
   const expectedPointsById = useMemo(() => {
@@ -35,13 +36,24 @@ export default function MyTeam() {
     [selection, squad, expectedPointsById, gameweeksPlayed]
   );
 
-  if (!getManagerId()) {
-    return <p>Set your manager ID on the Home page first.</p>;
+  // ManagerGate has no hooks of its own, so calling it directly (rather
+  // than rendering <ManagerGate/>) lets us check whether it actually has
+  // something to show before deciding whether to short-circuit the page.
+  const gate = ManagerGate({
+    managerId: getManagerId(),
+    loading,
+    error,
+    seasonNotStarted,
+    hasData: Boolean(selection),
+  });
+  if (gate) {
+    return (
+      <div>
+        <h1>📋 My Team</h1>
+        {gate}
+      </div>
+    );
   }
-  if (loading) return <p>Loading…</p>;
-  if (error) return <p className="warning">{error}</p>;
-  if (warning) return <p className="warning">{warning}</p>;
-  if (!selection) return <p>No squad picks found yet.</p>;
 
   return (
     <div>

@@ -3,11 +3,13 @@ import { useFplData } from "../lib/FplDataContext.jsx";
 import { useManagerData } from "../lib/useManagerData.js";
 import { estimateExpectedPoints, upcomingFixturesForTeam, suggestReplacements } from "../lib/analytics.js";
 import { getManagerId } from "../lib/storage.js";
+import ManagerGate from "../components/ManagerGate.jsx";
+import InfoBanner from "../components/InfoBanner.jsx";
 
 export default function TransferCentre() {
   const { players, teamsById, fixtures, gameweeksPlayed } = useFplData();
   const playersById = useMemo(() => Object.fromEntries(players.map((p) => [p.id, p])), [players]);
-  const { profile, squad, warning, error, loading } = useManagerData(playersById);
+  const { profile, squad, seasonNotStarted, error, loading } = useManagerData(playersById);
   const [horizon, setHorizon] = useState(4);
   const [freeTransfers, setFreeTransfers] = useState(1);
 
@@ -27,10 +29,21 @@ export default function TransferCentre() {
     return suggestReplacements(squad, players, expectedPointsById, bankM, freeTransfers, 6.0, 0.5, 3);
   }, [squad, players, expectedPointsById, bankM, freeTransfers]);
 
-  if (!getManagerId()) return <p>Set your manager ID on the Home page first.</p>;
-  if (loading) return <p>Loading…</p>;
-  if (error) return <p className="warning">{error}</p>;
-  if (warning) return <p className="warning">{warning}</p>;
+  const gate = ManagerGate({
+    managerId: getManagerId(),
+    loading,
+    error,
+    seasonNotStarted,
+    hasData: squad.length > 0,
+  });
+  if (gate) {
+    return (
+      <div>
+        <h1>🔄 Transfer Centre</h1>
+        {gate}
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -46,9 +59,9 @@ export default function TransferCentre() {
         </label>
       </div>
 
-      <div className="warning">
-        <strong>ROLL TRANSFER</strong>: if nothing below clears the threshold, bank your free transfer and make no move this week.
-      </div>
+      <InfoBanner title="ROLL TRANSFER" icon="💡">
+        If nothing below clears the threshold, bank your free transfer and make no move this week.
+      </InfoBanner>
 
       {suggestions.length === 0 ? (
         <div className="card">No transfer clears the minimum-gain threshold this week.</div>
