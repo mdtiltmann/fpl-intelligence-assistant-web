@@ -116,6 +116,26 @@ const STATUS_LABELS = {
   n: "Not in squad",
 };
 
+/** Flags a real, currently-observable decline: FPL's own rolling "form"
+ * figure (last few gameweeks) sitting well below the player's own
+ * points-per-game season average. This only means something once
+ * gameweeks have actually been played — pre-season both figures are 0
+ * and no flag is (or should be) raised. Not a prediction of future form,
+ * just a description of a trend that has already happened. */
+export function detectFormDrop(player, gameweeksPlayed) {
+  if (gameweeksPlayed <= 0) return { isDropping: false, note: null };
+  const form = Number(player.form) || 0;
+  const ppg = Number(player.points_per_game) || 0;
+  if (ppg < 2) return { isDropping: false, note: null }; // too low a baseline to call it a "drop"
+  if (form <= ppg * 0.5) {
+    return {
+      isDropping: true,
+      note: `📉 Form drop: recent form (${form.toFixed(1)}/game) is well below their season average (${ppg.toFixed(1)}/game).`,
+    };
+  }
+  return { isDropping: false, note: null };
+}
+
 function priceTier(priceM, elementType) {
   // Rough, position-relative bands — not an official FPL categorisation.
   const premiumFloor = { 1: 5.0, 2: 6.0, 3: 8.5, 4: 8.5 }[elementType] ?? 8.0;
@@ -123,6 +143,55 @@ function priceTier(priceM, elementType) {
   if (priceM >= premiumFloor) return "premium";
   if (priceM <= budgetCeiling) return "budget";
   return "mid-price";
+}
+
+/** Compares the first vs. second half of a player's upcoming-fixture
+ * window to flag a genuine timing signal — "fixtures get tougher from
+ * GW9, consider selling before then" or the reverse. This is based
+ * entirely on published fixture difficulty, not a form prediction:
+ * nobody can know a player's actual form three gameweeks from now, but
+ * the fixture list for those gameweeks is already public. */
+export function analyzeFixtureSwing(upcomingFixtures) {
+  if (!upcomingFixtures || upcomingFixtures.length < 2) {
+    return { direction: "steady", note: "Not enough upcoming fixtures in this horizon to spot a trend." };
+  }
+  const mid = Math.ceil(upcomingFixtures.length / 2);
+  const firstHalf = upcomingFixtures.slice(0, mid);
+  const secondHalf = upcomingFixtures.slice(mid);
+  if (!secondHalf.length) {
+    return { direction: "steady", note: "Not enough upcoming fixtures in this horizon to spot a trend." };
+  }
+  const avg = (arr) => arr.reduce((s, f) => s + f.difficulty, 0) / arr.length;
+  const firstAvg = avg(firstHalf);
+  const secondAvg = avg(secondHalf);
+  const delta = secondAvg - firstAvg;
+  const swingGw = secondHalf[0].event;
+
+  if (delta >= 0.75) {
+    return {
+      direction: "worsens",
+      swingGameweek: swingGw,
+      note:
+        `📉 Fixtures get noticeably tougher from GW${swingGw ?? "?"} onward ` +
+        `(difficulty ${firstAvg.toFixed(1)} → ${secondAvg.toFixed(1)}/5) — if you're considering selling, ` +
+        `doing it before that run starts is usually better than waiting.`,
+    };
+  }
+  if (delta <= -0.75) {
+    return {
+      direction: "improves",
+      swingGameweek: swingGw,
+      note:
+        `📈 Fixtures ease up from GW${swingGw ?? "?"} onward ` +
+        `(difficulty ${firstAvg.toFixed(1)} → ${secondAvg.toFixed(1)}/5) — worth holding through the tougher ` +
+        `early run rather than selling now, if form/fitness otherwise check out.`,
+    };
+  }
+  return {
+    direction: "steady",
+    swingGameweek: null,
+    note: `Fixture difficulty stays roughly steady across this horizon (${firstAvg.toFixed(1)} → ${secondAvg.toFixed(1)}/5) — no strong timing signal either way.`,
+  };
 }
 
 /** Builds a plain-English "why this player" explanation covering price,
@@ -142,6 +211,8 @@ export function explainPlayerPick(player, team, upcomingFixtures, estimate, game
     reasons.push(
       `Form: ${player.form} points/game recently (FPL's rolling average), ${player.total_points} points this season so far.`
     );
+    const formDrop = detectFormDrop(player, gameweeksPlayed);
+    if (formDrop.isDropping) reasons.push(formDrop.note);
   } else {
     reasons.push(
       `No matches played yet this season. Last season: ${player.total_points} points total. ` +
@@ -151,10 +222,11 @@ export function explainPlayerPick(player, team, upcomingFixtures, estimate, game
 
   if (upcomingFixtures?.length) {
     const fixtureList = upcomingFixtures
-      .map((f) => `${f.opponentShortName} (${f.isHome ? "H" : "A"}, difficulty ${f.difficulty})`)
+      .map((f) => `GW${f.event ?? "?"} ${f.opponentShortName} (${f.isHome ? "H" : "A"}, difficulty ${f.difficulty})`)
       .join(", ");
     const avg = (upcomingFixtures.reduce((s, f) => s + f.difficulty, 0) / upcomingFixtures.length).toFixed(1);
     reasons.push(`Upcoming fixtures: ${fixtureList} — average difficulty ${avg}/5 (1=easiest, 5=hardest).`);
+    reasons.push(analyzeFixtureSwing(upcomingFixtures).note);
   } else {
     reasons.push("No upcoming fixtures found in the selected horizon (blank gameweek or data not yet available).");
   }

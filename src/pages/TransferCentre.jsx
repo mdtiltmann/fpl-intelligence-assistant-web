@@ -1,10 +1,19 @@
 import React, { useMemo, useState } from "react";
 import { useFplData } from "../lib/FplDataContext.jsx";
 import { useManagerData } from "../lib/useManagerData.js";
-import { estimatePointsForDraft, upcomingFixturesForTeam, suggestReplacements, explainPlayerPick } from "../lib/analytics.js";
+import {
+  estimatePointsForDraft,
+  upcomingFixturesForTeam,
+  suggestReplacements,
+  explainPlayerPick,
+  analyzeFixtureSwing,
+  detectFormDrop,
+} from "../lib/analytics.js";
 import { getManagerId } from "../lib/storage.js";
 import ManagerGate from "../components/ManagerGate.jsx";
 import InfoBanner from "../components/InfoBanner.jsx";
+
+const WATCHLIST_HORIZON = 8; // longer lookahead than the main horizon, so a swing 5-6 GWs out is still caught
 
 export default function TransferCentre() {
   const { players, teamsById, fixtures, gameweeksPlayed } = useFplData();
@@ -21,6 +30,11 @@ export default function TransferCentre() {
     return (teamId) => (cache[teamId] ||= upcomingFixturesForTeam(fixtures, teamsById, teamId, horizon));
   }, [fixtures, teamsById, horizon]);
 
+  const upcomingByTeamLong = useMemo(() => {
+    const cache = {};
+    return (teamId) => (cache[teamId] ||= upcomingFixturesForTeam(fixtures, teamsById, teamId, WATCHLIST_HORIZON));
+  }, [fixtures, teamsById]);
+
   const expectedPointsById = useMemo(() => {
     const result = {};
     for (const p of players) {
@@ -33,6 +47,16 @@ export default function TransferCentre() {
     if (!squad.length) return [];
     return suggestReplacements(squad, players, expectedPointsById, bankM, freeTransfers, 6.0, 0.5, 3);
   }, [squad, players, expectedPointsById, bankM, freeTransfers]);
+
+  const watchlist = useMemo(() => {
+    return squad
+      .map((p) => {
+        const swing = analyzeFixtureSwing(upcomingByTeamLong(p.team));
+        const formDrop = detectFormDrop(p, gameweeksPlayed);
+        return { player: p, swing, formDrop };
+      })
+      .filter((w) => w.swing.direction === "worsens" || w.formDrop.isDropping);
+  }, [squad, upcomingByTeamLong, gameweeksPlayed]);
 
   const gate = ManagerGate({
     managerId: getManagerId(),
@@ -68,13 +92,33 @@ export default function TransferCentre() {
         If nothing below clears the threshold, bank your free transfer and make no move this week.
       </InfoBanner>
 
+      {watchlist.length > 0 && (
+        <div className="card">
+          <h3>⏰ Watchlist — sell timing signals</h3>
+          <p className="muted">
+            Players with no immediate swap suggested below, but a fixture swing or a real form decline worth
+            planning around over the next {WATCHLIST_HORIZON} gameweeks.
+          </p>
+          {watchlist.map(({ player, swing, formDrop }) => (
+            <div key={player.id} style={{ marginBottom: "0.6rem" }}>
+              <strong>{player.web_name}</strong> ({teamsById[player.team]?.short_name})
+              {swing.direction === "worsens" && <div className="muted">{swing.note}</div>}
+              {formDrop.isDropping && <div className="muted">{formDrop.note}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+
       {suggestions.length === 0 ? (
         <div className="card">No transfer clears the minimum-gain threshold this week.</div>
       ) : (
         suggestions.slice(0, 10).map((s, i) => {
           const expanded = expandedIndex === i;
+          const outUpcoming = upcomingByTeam(s.playerOut.team);
+          const outSwing = analyzeFixtureSwing(upcomingByTeamLong(s.playerOut.team));
+          const outFormDrop = detectFormDrop(s.playerOut, gameweeksPlayed);
           const outReasons = explainPlayerPick(
-            s.playerOut, teamsById[s.playerOut.team], upcomingByTeam(s.playerOut.team), expectedPointsById[s.playerOut.id], gameweeksPlayed
+            s.playerOut, teamsById[s.playerOut.team], outUpcoming, expectedPointsById[s.playerOut.id], gameweeksPlayed
           );
           const inReasons = explainPlayerPick(
             s.playerIn, teamsById[s.playerIn.team], upcomingByTeam(s.playerIn.team), expectedPointsById[s.playerIn.id], gameweeksPlayed
@@ -88,6 +132,12 @@ export default function TransferCentre() {
                 <div className="metric"><div className="label">Gain (after hit)</div><div className="value">{s.expectedGainAfterHit > 0 ? "+" : ""}{s.expectedGainAfterHit}</div></div>
               </div>
               <p className="muted">Cash impact: {s.cashDeltaM >= 0 ? "+" : ""}{s.cashDeltaM}m in the bank afterwards.</p>
+              {(outSwing.direction === "worsens" || outFormDrop.isDropping) && (
+                <InfoBanner title="Timing signal" icon="⏰">
+                  {outSwing.direction === "worsens" && <div>{outSwing.note}</div>}
+                  {outFormDrop.isDropping && <div>{outFormDrop.note}</div>}
+                </InfoBanner>
+              )}
               <button onClick={() => setExpandedIndex(expanded ? null : i)}>
                 {expanded ? "Hide detailed reasoning" : "Why sell / why buy?"}
               </button>
@@ -108,7 +158,8 @@ export default function TransferCentre() {
         })
       )}
       <p className="muted">
-        Covers single-transfer suggestions with budget/hit-cost math. Never auto-applied — you decide.
+        Covers single-transfer suggestions with budget/hit-cost math. Timing signals are based on published
+        fixture difficulty and already-observed form — nobody can predict future form. Never auto-applied — you decide.
       </p>
     </div>
   );
