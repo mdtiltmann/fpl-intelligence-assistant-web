@@ -9,6 +9,9 @@ import Captaincy from "./pages/Captaincy.jsx";
 import Fixtures from "./pages/Fixtures.jsx";
 import TransferCentre from "./pages/TransferCentre.jsx";
 import DraftSquad from "./pages/DraftSquad.jsx";
+import TopManagers from "./pages/TopManagers.jsx";
+import SquadTranslator from "./pages/SquadTranslator.jsx";
+import History from "./pages/History.jsx";
 
 export default function App() {
   return (
@@ -24,6 +27,9 @@ export default function App() {
             <Route path="/fixtures" element={<Fixtures />} />
             <Route path="/transfer-centre" element={<TransferCentre />} />
             <Route path="/draft-squad" element={<DraftSquad />} />
+            <Route path="/top-managers" element={<TopManagers />} />
+            <Route path="/squad-translator" element={<SquadTranslator />} />
+            <Route path="/history" element={<History />} />
           </Routes>
         </div>
       </div>

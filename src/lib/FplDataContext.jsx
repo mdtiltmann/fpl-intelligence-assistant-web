@@ -7,6 +7,7 @@ export function FplDataProvider({ children }) {
   const [players, setPlayers] = useState([]);
   const [teams, setTeams] = useState([]);
   const [events, setEvents] = useState([]);
+  const [chipRules, setChipRules] = useState([]);
   const [fixtures, setFixtures] = useState([]);
   const [lastFetchedAt, setLastFetchedAt] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -20,6 +21,10 @@ export function FplDataProvider({ children }) {
       setPlayers(bootstrap.elements || []);
       setTeams(bootstrap.teams || []);
       setEvents(bootstrap.events || []);
+      // Real per-season chip windows/counts, read straight from FPL's own
+      // bootstrap-static "chips" array — never hard-coded (this has
+      // genuinely changed between seasons).
+      setChipRules(bootstrap.chips || []);
       setFixtures(fixtureList || []);
       setLastFetchedAt(new Date());
     } catch (err) {
@@ -44,6 +49,7 @@ export function FplDataProvider({ children }) {
         teams,
         teamsById,
         events,
+        chipRules,
         fixtures,
         gameweeksPlayed,
         currentEvent,

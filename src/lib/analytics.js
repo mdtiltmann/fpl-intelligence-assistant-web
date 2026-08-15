@@ -589,3 +589,101 @@ export function suggestReplacements(squad, allPlayers, expectedPointsById, bankM
   suggestions.sort((a, b) => b.expectedGainAfterHit - a.expectedGainAfterHit);
   return suggestions;
 }
+
+function topCandidatesFor(outPlayer, allPlayers, expectedPointsById, squadIds, sellingPrice, bankM, topK = 5) {
+  const outEp = expectedPointsById[outPlayer.id];
+  if (!outEp) return [];
+  const candidates = [];
+  for (const cand of allPlayers) {
+    if (squadIds.has(cand.id) || cand.element_type !== outPlayer.element_type) continue;
+    if (cand.now_cost / 10 > sellingPrice + bankM) continue;
+    const candEp = expectedPointsById[cand.id];
+    if (!candEp) continue;
+    candidates.push([cand, candEp.central - outEp.central]);
+  }
+  candidates.sort((a, b) => b[1] - a[1]);
+  return candidates.slice(0, topK);
+}
+
+/** Bounded 2- or 3-move transfer search — a lean port of
+ * recommendations/transfers.py's suggest_double_transfers/
+ * suggest_triple_transfers, generalised over moveCount. For each
+ * combination of `moveCount` outgoing players, tries each leg's top-5
+ * individually-affordable replacements and keeps the best jointly-
+ * feasible (budget, club-limit) combination — not an exhaustive search
+ * of the whole player pool. */
+export function suggestMultiTransfers(
+  squad, allPlayers, expectedPointsById, bankM, freeTransfers, minGainForHit, minGainNoHit, maxPerClub, moveCount
+) {
+  const squadIds = new Set(squad.map((p) => p.id));
+  const clubCounts = {};
+  for (const p of squad) clubCounts[p.team] = (clubCounts[p.team] || 0) + 1;
+  const eligible = squad.filter((p) => expectedPointsById[p.id]);
+
+  const combos = [];
+  (function combo(start, chosen) {
+    if (chosen.length === moveCount) { combos.push(chosen.slice()); return; }
+    for (let i = start; i < eligible.length; i++) {
+      chosen.push(i);
+      combo(i + 1, chosen);
+      chosen.pop();
+    }
+  })(0, []);
+
+  const results = [];
+  for (const comboIdx of combos) {
+    const outs = comboIdx.map((i) => eligible[i]);
+    const sellPrices = outs.map((p) => p.now_cost / 10);
+    const combinedBank = bankM + sellPrices.reduce((a, b) => a + b, 0);
+    const candLists = outs.map((p, i) => topCandidatesFor(p, allPlayers, expectedPointsById, squadIds, sellPrices[i], bankM));
+    if (candLists.some((l) => l.length === 0)) continue;
+
+    let best = null;
+    let bestGain = 0;
+    (function cartesian(i, chosenCands, chosenIds, gainSum) {
+      if (i === candLists.length) {
+        const totalCost = chosenCands.reduce((s, c) => s + c.now_cost / 10, 0);
+        if (totalCost > combinedBank) return;
+        const countsAfter = { ...clubCounts };
+        for (const p of outs) countsAfter[p.team] = (countsAfter[p.team] || 0) - 1;
+        for (const c of chosenCands) countsAfter[c.team] = (countsAfter[c.team] || 0) + 1;
+        if (Math.max(0, ...Object.values(countsAfter)) > maxPerClub) return;
+        if (gainSum > bestGain) { bestGain = gainSum; best = chosenCands.slice(); }
+        return;
+      }
+      for (const [cand, gain] of candLists[i]) {
+        if (chosenIds.has(cand.id)) continue;
+        chosenIds.add(cand.id);
+        chosenCands.push(cand);
+        cartesian(i + 1, chosenCands, chosenIds, gainSum + gain);
+        chosenCands.pop();
+        chosenIds.delete(cand.id);
+      }
+    })(0, [], new Set(), 0);
+
+    if (!best) continue;
+
+    const hitCost = POINTS_PER_HIT * Math.max(0, moveCount - freeTransfers);
+    const gainAfterHit = bestGain - hitCost;
+    const threshold = hitCost > 0 ? minGainForHit : minGainNoHit;
+    if (gainAfterHit < threshold) continue;
+
+    const moves = outs.map((p, i) => ({
+      playerOut: p,
+      playerIn: best[i],
+      expectedPointsOut: expectedPointsById[p.id].central,
+      expectedPointsIn: expectedPointsById[best[i].id].central,
+    }));
+    const totalCost = best.reduce((s, c) => s + c.now_cost / 10, 0);
+    results.push({
+      moves,
+      totalCashDeltaM: Math.round((combinedBank - totalCost) * 10) / 10,
+      expectedGainBeforeHit: Math.round(bestGain * 100) / 100,
+      hitCost,
+      expectedGainAfterHit: Math.round(gainAfterHit * 100) / 100,
+    });
+  }
+
+  results.sort((a, b) => b.expectedGainAfterHit - a.expectedGainAfterHit);
+  return results.slice(0, 5);
+}

@@ -36,3 +36,11 @@ export function getEntryPicks(managerId, eventId) {
     `${FN}/entry-picks?managerId=${encodeURIComponent(managerId)}&event=${encodeURIComponent(eventId)}`
   );
 }
+
+export function getStandings(leagueId = 314, page = 1) {
+  return getJson(`${FN}/standings?leagueId=${encodeURIComponent(leagueId)}&page=${encodeURIComponent(page)}`);
+}
+
+export function getElementSummary(playerId) {
+  return getJson(`${FN}/element-summary?playerId=${encodeURIComponent(playerId)}`);
+}

@@ -9,6 +9,9 @@ const LINKS = [
   { to: "/captaincy", label: "👑 Captaincy" },
   { to: "/fixtures", label: "📅 Fixtures" },
   { to: "/transfer-centre", label: "🔄 Transfer Centre" },
+  { to: "/top-managers", label: "🏆 Top Managers" },
+  { to: "/squad-translator", label: "🔁 Squad Translator" },
+  { to: "/history", label: "📜 History" },
 ];
 
 export default function Nav() {

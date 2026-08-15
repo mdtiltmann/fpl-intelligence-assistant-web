@@ -12,6 +12,7 @@ import {
 } from "../lib/analytics.js";
 import { getManagerId } from "../lib/storage.js";
 import ManagerGate from "../components/ManagerGate.jsx";
+import { classifySafety, SAFETY_ICON } from "../lib/recommendationSafety.js";
 
 export default function Captaincy() {
   const { players, teamsById, fixtures, gameweeksPlayed } = useFplData();
@@ -61,6 +62,7 @@ export default function Captaincy() {
 
   const safest = safestCaptain(options);
   const upside = highestUpsideCaptain(options);
+  const safestSafety = safest ? classifySafety(expectedPointsById[safest.player.id]?.confidence ?? 0, gameweeksPlayed) : null;
 
   return (
     <div>
@@ -77,6 +79,7 @@ export default function Captaincy() {
             <>
               <p><strong>{safest.player.web_name}</strong> — expected {safest.expectedPoints.toFixed(1)} pts (security {safest.security.toFixed(0)}/100)</p>
               <p className="muted">{safest.riskNote}</p>
+              {safestSafety && <p className="muted">{SAFETY_ICON[safestSafety.label]} {safestSafety.label} — {safestSafety.reason}</p>}
             </>
           )}
         </div>

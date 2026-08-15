@@ -5,6 +5,7 @@ import {
   estimatePointsForDraft,
   upcomingFixturesForTeam,
   suggestReplacements,
+  suggestMultiTransfers,
   explainPlayerPick,
   analyzeFixtureSwing,
   detectFormDrop,
@@ -12,6 +13,7 @@ import {
 import { getManagerId } from "../lib/storage.js";
 import ManagerGate from "../components/ManagerGate.jsx";
 import InfoBanner from "../components/InfoBanner.jsx";
+import { classifySafety, SAFETY_ICON } from "../lib/recommendationSafety.js";
 
 const WATCHLIST_HORIZON = 8; // longer lookahead than the main horizon, so a swing 5-6 GWs out is still caught
 
@@ -46,6 +48,16 @@ export default function TransferCentre() {
   const suggestions = useMemo(() => {
     if (!squad.length) return [];
     return suggestReplacements(squad, players, expectedPointsById, bankM, freeTransfers, 6.0, 0.5, 3);
+  }, [squad, players, expectedPointsById, bankM, freeTransfers]);
+
+  const doubleSuggestions = useMemo(() => {
+    if (!squad.length) return [];
+    return suggestMultiTransfers(squad, players, expectedPointsById, bankM, freeTransfers, 6.0, 0.5, 3, 2);
+  }, [squad, players, expectedPointsById, bankM, freeTransfers]);
+
+  const tripleSuggestions = useMemo(() => {
+    if (!squad.length) return [];
+    return suggestMultiTransfers(squad, players, expectedPointsById, bankM, freeTransfers, 6.0, 0.5, 3, 3);
   }, [squad, players, expectedPointsById, bankM, freeTransfers]);
 
   const watchlist = useMemo(() => {
@@ -132,6 +144,11 @@ export default function TransferCentre() {
                 <div className="metric"><div className="label">Gain (after hit)</div><div className="value">{s.expectedGainAfterHit > 0 ? "+" : ""}{s.expectedGainAfterHit}</div></div>
               </div>
               <p className="muted">Cash impact: {s.cashDeltaM >= 0 ? "+" : ""}{s.cashDeltaM}m in the bank afterwards.</p>
+              {(() => {
+                const conf = Math.min(expectedPointsById[s.playerOut.id]?.confidence ?? 0, expectedPointsById[s.playerIn.id]?.confidence ?? 0);
+                const safety = classifySafety(conf, gameweeksPlayed);
+                return <p className="muted">{SAFETY_ICON[safety.label]} {safety.label} — {safety.reason}</p>;
+              })()}
               {(outSwing.direction === "worsens" || outFormDrop.isDropping) && (
                 <InfoBanner title="Timing signal" icon="⏰">
                   {outSwing.direction === "worsens" && <div>{outSwing.note}</div>}
@@ -157,10 +174,43 @@ export default function TransferCentre() {
           );
         })
       )}
+
+      <MultiTransferSection title="Two-transfer combinations" suggestions={doubleSuggestions} />
+      <MultiTransferSection title="Three-transfer combinations" suggestions={tripleSuggestions} />
+
       <p className="muted">
-        Covers single-transfer suggestions with budget/hit-cost math. Timing signals are based on published
-        fixture difficulty and already-observed form — nobody can predict future form. Never auto-applied — you decide.
+        Covers single-, two-, and three-transfer suggestions with budget/hit-cost math (bounded top-5-per-leg
+        search, not exhaustive). Timing signals are based on published fixture difficulty and already-observed
+        form — nobody can predict future form. Never auto-applied — you decide.
       </p>
     </div>
+  );
+}
+
+function MultiTransferSection({ title, suggestions }) {
+  return (
+    <>
+      <h3 style={{ marginTop: "1.5rem" }}>{title}</h3>
+      {suggestions.length === 0 ? (
+        <div className="card">No combination clears the minimum-gain threshold this week.</div>
+      ) : (
+        suggestions.map((s, i) => (
+          <div className="card" key={i}>
+            {s.moves.map((m, j) => (
+              <p key={j}>
+                <strong>OUT:</strong> {m.playerOut.web_name} ({m.expectedPointsOut.toFixed(1)} pts) →{" "}
+                <strong>IN:</strong> {m.playerIn.web_name} ({m.expectedPointsIn.toFixed(1)} pts)
+              </p>
+            ))}
+            <div className="metric-row">
+              <div className="metric"><div className="label">Combined gain (before hit)</div><div className="value">{s.expectedGainBeforeHit > 0 ? "+" : ""}{s.expectedGainBeforeHit}</div></div>
+              <div className="metric"><div className="label">Hit cost</div><div className="value">{s.hitCost ? `-${s.hitCost}` : "0"}</div></div>
+              <div className="metric"><div className="label">Combined gain (after hit)</div><div className="value">{s.expectedGainAfterHit > 0 ? "+" : ""}{s.expectedGainAfterHit}</div></div>
+            </div>
+            <p className="muted">Cash impact: {s.totalCashDeltaM >= 0 ? "+" : ""}{s.totalCashDeltaM}m in the bank afterwards.</p>
+          </div>
+        ))
+      )}
+    </>
   );
 }

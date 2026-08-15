@@ -11,6 +11,7 @@ import {
 } from "../lib/analytics.js";
 import { getManagerId } from "../lib/storage.js";
 import ManagerGate from "../components/ManagerGate.jsx";
+import { classifySafety, SAFETY_ICON } from "../lib/recommendationSafety.js";
 
 export default function MyTeam() {
   const { players, teamsById, fixtures, gameweeksPlayed } = useFplData();
@@ -41,6 +42,13 @@ export default function MyTeam() {
     () => (selection ? computeTeamRating(squad, selection.starters, selection.bench, expectedPointsById, gameweeksPlayed, fixtures, teamsById, horizon) : null),
     [selection, squad, expectedPointsById, gameweeksPlayed, fixtures, teamsById, horizon]
   );
+
+  const safety = useMemo(() => {
+    if (!selection) return null;
+    const confidences = selection.starters.map((p) => expectedPointsById[p.id]?.confidence ?? 0);
+    const avgConfidence = confidences.length ? confidences.reduce((a, b) => a + b, 0) / confidences.length : 0;
+    return classifySafety(avgConfidence, gameweeksPlayed);
+  }, [selection, expectedPointsById, gameweeksPlayed]);
 
   // ManagerGate has no hooks of its own, so calling it directly (rather
   // than rendering <ManagerGate/>) lets us check whether it actually has
@@ -98,7 +106,11 @@ export default function MyTeam() {
       </label>
 
       <div className="card">
-        <h2>Team rating: {rating.overall.toFixed(0)} / 100</h2>
+        <h2>
+          Team rating: {rating.overall.toFixed(0)} / 100
+          {safety && <span style={{ fontSize: "0.9rem", marginLeft: "0.6rem" }}>{SAFETY_ICON[safety.label]} {safety.label}</span>}
+        </h2>
+        {safety && <p className="muted">{safety.reason}</p>}
         <details>
           <summary>How this was calculated</summary>
           {rating.components.map((c) => (
