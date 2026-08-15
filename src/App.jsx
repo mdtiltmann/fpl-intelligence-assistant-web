@@ -3,6 +3,7 @@ import { Routes, Route } from "react-router-dom";
 import Nav from "./components/Nav.jsx";
 import { FplDataProvider } from "./lib/FplDataContext.jsx";
 import Home from "./pages/Home.jsx";
+import Guide from "./pages/Guide.jsx";
 import MyTeam from "./pages/MyTeam.jsx";
 import PlayerExplorer from "./pages/PlayerExplorer.jsx";
 import Captaincy from "./pages/Captaincy.jsx";
@@ -21,6 +22,7 @@ export default function App() {
         <div className="main">
           <Routes>
             <Route path="/" element={<Home />} />
+            <Route path="/guide" element={<Guide />} />
             <Route path="/my-team" element={<MyTeam />} />
             <Route path="/player-explorer" element={<PlayerExplorer />} />
             <Route path="/captaincy" element={<Captaincy />} />

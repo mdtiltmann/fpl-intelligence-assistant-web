@@ -3,6 +3,7 @@ import { NavLink, useLocation } from "react-router-dom";
 
 const LINKS = [
   { to: "/", label: "🏠 Home", end: true },
+  { to: "/guide", label: "📘 How to Use" },
   { to: "/my-team", label: "📋 My Team" },
   { to: "/player-explorer", label: "🔍 Player Explorer" },
   { to: "/draft-squad", label: "🧪 Draft Squad" },
