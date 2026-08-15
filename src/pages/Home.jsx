@@ -55,8 +55,8 @@ export default function Home() {
             ? "Change your FPL manager ID:"
             : "Enter your FPL manager ID (from the URL when viewing your team, e.g. .../entry/1234567/event/1):"}
         </p>
-        <form onSubmit={handleSave} style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-          <input value={inputId} onChange={(e) => setInputId(e.target.value)} placeholder="1234567" />
+        <form onSubmit={handleSave} className="flex-row" style={{ gap: "0.5rem" }}>
+          <input value={inputId} onChange={(e) => setInputId(e.target.value)} placeholder="1234567" style={{ flex: 1, minWidth: 140 }} />
           <button type="submit">{savedId ? "Save & switch" : "Save"}</button>
           {justSaved && <span className="muted">✓ Saved</span>}
         </form>

@@ -77,7 +77,7 @@ export default function TransferCentre() {
   return (
     <div>
       <h1>🔄 Transfer Centre</h1>
-      <div className="card" style={{ display: "flex", gap: "1rem" }}>
+      <div className="card flex-row">
         <label>
           Horizon:{" "}
           <input type="number" min="1" max="8" value={horizon} onChange={(e) => setHorizon(Number(e.target.value))} />

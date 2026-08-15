@@ -194,11 +194,11 @@ export default function DraftSquad() {
 
       <div className="card">
         <h3>Add players</h3>
-        <div style={{ display: "flex", gap: "1rem", marginBottom: "0.75rem" }}>
+        <div className="flex-row" style={{ marginBottom: "0.75rem" }}>
           <select value={addPosition} onChange={(e) => setAddPosition(e.target.value)}>
             <option>All</option><option>GKP</option><option>DEF</option><option>MID</option><option>FWD</option>
           </select>
-          <input placeholder="Search player name…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input placeholder="Search player name…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ flex: 1, minWidth: 160 }} />
         </div>
         <table>
           <thead><tr><th>Player</th><th>Pos</th><th>Club</th><th>Price</th><th>Projection</th><th></th><th></th></tr></thead>

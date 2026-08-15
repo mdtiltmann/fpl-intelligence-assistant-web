@@ -65,6 +65,100 @@ body {
   flex: 1;
   padding: 1.5rem 2rem;
   max-width: 1100px;
+  min-width: 0; /* allow flex child to shrink below its content's natural width */
+}
+
+/* --- Mobile top bar: hidden on desktop, shown only under the breakpoint --- */
+.mobile-topbar {
+  display: none;
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
+@media (max-width: 860px) {
+  .app-shell {
+    flex-direction: column;
+  }
+
+  .mobile-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 0.6rem 0.9rem;
+  }
+
+  .mobile-topbar h1 {
+    font-size: 1.05rem;
+    margin: 0;
+  }
+
+  .hamburger-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+    line-height: 1;
+    border-radius: 8px;
+  }
+
+  /* Sidebar becomes an off-canvas drawer that slides in from the left,
+     rather than permanently eating screen width on a phone. */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 50;
+    width: min(78vw, 300px);
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    overflow-y: auto;
+    box-shadow: 2px 0 16px rgba(0, 0, 0, 0.35);
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 40;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+
+  .sidebar-backdrop.open {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* Larger tap targets once we're in touch-first territory. */
+  .sidebar nav a {
+    padding: 0.75rem 0.7rem;
+    font-size: 1rem;
+  }
+
+  .main {
+    padding: 1rem 0.85rem 2rem;
+    max-width: 100%;
+  }
 }
 
 .card {
@@ -80,6 +174,16 @@ body {
   gap: 1rem;
   flex-wrap: wrap;
   margin-bottom: 1rem;
+}
+
+/* Generic responsive row used in place of ad-hoc inline flex styles —
+   wraps onto multiple lines whenever content doesn't fit, on any screen
+   size, rather than squeezing or overflowing on a phone. */
+.flex-row {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  align-items: center;
 }
 
 .metric {
@@ -173,3 +277,39 @@ button:disabled {
 .info-banner strong { display: block; margin-bottom: 0.15rem; }
 
 .muted { color: var(--muted); font-size: 0.85rem; }
+
+/* Tables overflow horizontally within their own box on narrow screens
+   instead of stretching the page (which would force the whole layout to
+   scroll sideways). No wrapper element needed — a block-level table can
+   scroll its own content. */
+@media (max-width: 640px) {
+  table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .card {
+    padding: 0.85rem 1rem;
+  }
+
+  .metric {
+    min-width: 0;
+    flex: 1 1 calc(50% - 0.5rem);
+  }
+
+  .metric .value {
+    font-size: 1.2rem;
+  }
+
+  h2 { font-size: 1.25rem; }
+  h3 { font-size: 1.05rem; }
+
+  /* Buttons/inputs get a touch-friendly minimum height (Apple/Google's
+     44px guideline) rather than the compact desktop sizing. */
+  button, select, input {
+    min-height: 44px;
+    font-size: 1rem;
+  }
+}

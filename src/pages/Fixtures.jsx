@@ -24,7 +24,7 @@ export default function Fixtures() {
   return (
     <div>
       <h1>📅 Fixtures</h1>
-      <div className="card" style={{ display: "flex", gap: "1rem" }}>
+      <div className="card flex-row">
         <label>
           Club:{" "}
           <select value={selectedTeamId || ""} onChange={(e) => setTeamId(Number(e.target.value))}>
