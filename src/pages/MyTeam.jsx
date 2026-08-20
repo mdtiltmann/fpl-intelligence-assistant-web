@@ -12,11 +12,13 @@ import {
 import { getManagerId } from "../lib/storage.js";
 import ManagerGate from "../components/ManagerGate.jsx";
 import { classifySafety, SAFETY_ICON } from "../lib/recommendationSafety.js";
+import { suggestRatingImprovements } from "../lib/ratingImprovements.js";
 
 export default function MyTeam() {
   const { players, teamsById, fixtures, gameweeksPlayed } = useFplData();
   const playersById = useMemo(() => Object.fromEntries(players.map((p) => [p.id, p])), [players]);
-  const { squad, seasonNotStarted, error, loading } = useManagerData(playersById);
+  const { squad, profile, seasonNotStarted, error, loading } = useManagerData(playersById);
+  const bankM = profile?.last_deadline_bank != null ? profile.last_deadline_bank / 10 : 0;
   const [horizon, setHorizon] = useState(4);
   const [expandedId, setExpandedId] = useState(null);
 
@@ -26,12 +28,14 @@ export default function MyTeam() {
   }, [fixtures, teamsById, horizon]);
 
   const expectedPointsById = useMemo(() => {
+    // Covers every player, not just the squad, so rating-improvement
+    // suggestions below can evaluate any same-position replacement.
     const result = {};
-    for (const p of squad) {
+    for (const p of players) {
       result[p.id] = estimatePointsForDraft(p, gameweeksPlayed, upcomingByTeam(p.team));
     }
     return result;
-  }, [squad, gameweeksPlayed, upcomingByTeam]);
+  }, [players, gameweeksPlayed, upcomingByTeam]);
 
   const selection = useMemo(
     () => (squad.length === 15 ? pickBestXi(squad, expectedPointsById) : null),
@@ -49,6 +53,14 @@ export default function MyTeam() {
     const avgConfidence = confidences.length ? confidences.reduce((a, b) => a + b, 0) / confidences.length : 0;
     return classifySafety(avgConfidence, gameweeksPlayed);
   }, [selection, expectedPointsById, gameweeksPlayed]);
+
+  const ratingImprovements = useMemo(() => {
+    if (squad.length !== 15) return { suggestions: [] };
+    return suggestRatingImprovements({
+      squad, allPlayers: players, expectedPointsById, budgetRemainingM: bankM, maxPerClub: 3,
+      gameweeksPlayed, fixtures, teamsById, horizon,
+    });
+  }, [squad, players, expectedPointsById, bankM, gameweeksPlayed, fixtures, teamsById, horizon]);
 
   // ManagerGate has no hooks of its own, so calling it directly (rather
   // than rendering <ManagerGate/>) lets us check whether it actually has
@@ -119,6 +131,40 @@ export default function MyTeam() {
             </p>
           ))}
         </details>
+      </div>
+
+      <div className="card">
+        <h3>How to raise your rating — swap options (within budget)</h3>
+        <p className="muted">
+          For each swappable squad player, the best same-position, affordable replacement that actually
+          raises your team rating — not just expected points. Only genuine improvements are shown.
+        </p>
+        {ratingImprovements.suggestions.length === 0 ? (
+          <p className="muted">No affordable same-position swap raises your rating right now — your squad is well-optimised for its budget.</p>
+        ) : (
+          ratingImprovements.suggestions.map((s, i) => (
+            <div key={i} className="card" style={{ background: "rgba(79,140,255,0.06)" }}>
+              <p>
+                <strong>OUT:</strong> {s.playerOut.web_name} → <strong>IN:</strong> {s.playerIn.web_name}{" "}
+                (£{(s.playerIn.now_cost / 10).toFixed(1)}m)
+              </p>
+              <div className="metric-row">
+                <div className="metric"><div className="label">Rating before</div><div className="value">{s.ratingBefore.toFixed(0)}</div></div>
+                <div className="metric"><div className="label">Rating after</div><div className="value">{s.ratingAfter.toFixed(0)}</div></div>
+                <div className="metric"><div className="label">Change</div><div className="value">+{s.ratingDelta.toFixed(1)}</div></div>
+              </div>
+              <p className="muted">Cash impact: {s.cashDeltaM >= 0 ? "+" : ""}{s.cashDeltaM}m in the bank afterwards.</p>
+              {s.componentDiffs.length > 0 && (
+                <p>
+                  <strong>Why:</strong>{" "}
+                  {s.componentDiffs.map((d, j) => (
+                    <span key={j}>{d.label} {d.delta > 0 ? "+" : ""}{d.delta}{j < s.componentDiffs.length - 1 ? ", " : ""}</span>
+                  ))}
+                </p>
+              )}
+            </div>
+          ))
+        )}
       </div>
 
       <div className="card">

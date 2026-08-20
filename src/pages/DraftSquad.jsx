@@ -13,6 +13,7 @@ import {
   explainPlayerPick,
 } from "../lib/analytics.js";
 import InfoBanner from "../components/InfoBanner.jsx";
+import { suggestRatingImprovements } from "../lib/ratingImprovements.js";
 
 const SQUAD_SHAPE = { 1: 2, 2: 5, 3: 5, 4: 3 };
 const POSITIONS = [1, 2, 3, 4];
@@ -118,6 +119,14 @@ export default function DraftSquad() {
     [selection, estimatesById, gameweeksPlayed]
   );
 
+  const ratingImprovements = useMemo(() => {
+    if (!isLegal) return { suggestions: [] };
+    return suggestRatingImprovements({
+      squad, allPlayers: players, expectedPointsById: estimatesById, budgetRemainingM: remaining, maxPerClub,
+      gameweeksPlayed, fixtures, teamsById, horizon,
+    });
+  }, [isLegal, squad, players, estimatesById, remaining, maxPerClub, gameweeksPlayed, fixtures, teamsById, horizon]);
+
   if (loading) return <p>Loading…</p>;
 
   return (
@@ -189,6 +198,38 @@ export default function DraftSquad() {
               safest: {safestCaptain(captains)?.player.web_name}, highest upside: {highestUpsideCaptain(captains)?.player.web_name}.
             </p>
           )}
+        </div>
+      )}
+
+      {isLegal && ratingImprovements.suggestions.length > 0 && (
+        <div className="card">
+          <h3>How to raise your rating — swap options (within budget)</h3>
+          <p className="muted">
+            For each swappable squad player, the best same-position, affordable replacement that actually
+            raises your team rating — not just expected points. Only genuine improvements are shown.
+          </p>
+          {ratingImprovements.suggestions.map((s, i) => (
+            <div key={i} className="card" style={{ background: "rgba(79,140,255,0.06)" }}>
+              <p>
+                <strong>OUT:</strong> {s.playerOut.web_name} → <strong>IN:</strong> {s.playerIn.web_name}{" "}
+                (£{(s.playerIn.now_cost / 10).toFixed(1)}m)
+              </p>
+              <div className="metric-row">
+                <div className="metric"><div className="label">Rating before</div><div className="value">{s.ratingBefore.toFixed(0)}</div></div>
+                <div className="metric"><div className="label">Rating after</div><div className="value">{s.ratingAfter.toFixed(0)}</div></div>
+                <div className="metric"><div className="label">Change</div><div className="value">+{s.ratingDelta.toFixed(1)}</div></div>
+              </div>
+              <p className="muted">Cash impact: {s.cashDeltaM >= 0 ? "+" : ""}{s.cashDeltaM}m of budget remaining afterwards.</p>
+              {s.componentDiffs.length > 0 && (
+                <p>
+                  <strong>Why:</strong>{" "}
+                  {s.componentDiffs.map((d, j) => (
+                    <span key={j}>{d.label} {d.delta > 0 ? "+" : ""}{d.delta}{j < s.componentDiffs.length - 1 ? ", " : ""}</span>
+                  ))}
+                </p>
+              )}
+            </div>
+          ))}
         </div>
       )}
 
