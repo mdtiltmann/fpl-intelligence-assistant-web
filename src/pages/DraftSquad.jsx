@@ -14,19 +14,23 @@ import {
 } from "../lib/analytics.js";
 import InfoBanner from "../components/InfoBanner.jsx";
 import { suggestRatingImprovements } from "../lib/ratingImprovements.js";
+import { getSavedDraftSquad, saveDraftSquad, clearSavedDraftSquad } from "../lib/storage.js";
 
 const SQUAD_SHAPE = { 1: 2, 2: 5, 3: 5, 4: 3 };
 const POSITIONS = [1, 2, 3, 4];
 
 export default function DraftSquad() {
   const { players, teamsById, fixtures, gameweeksPlayed, loading } = useFplData();
-  const [budget, setBudget] = useState(100);
-  const [maxPerClub, setMaxPerClub] = useState(3);
-  const [selectedIds, setSelectedIds] = useState([]);
+  const savedOnLoad = useMemo(() => getSavedDraftSquad(), []);
+  const [budget, setBudget] = useState(savedOnLoad?.budget ?? 100);
+  const [maxPerClub, setMaxPerClub] = useState(savedOnLoad?.maxPerClub ?? 3);
+  const [selectedIds, setSelectedIds] = useState(savedOnLoad?.playerIds ?? []);
   const [addPosition, setAddPosition] = useState("All");
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState(null);
   const [horizon] = useState(4);
+  const [savedAt, setSavedAt] = useState(savedOnLoad?.savedAt ?? null);
+  const [justSaved, setJustSaved] = useState(false);
 
   const estimatesById = useMemo(() => {
     const result = {};
@@ -79,6 +83,26 @@ export default function DraftSquad() {
   const addPlayer = (id) => setSelectedIds((prev) => [...prev, id]);
   const removePlayer = (id) => setSelectedIds((prev) => prev.filter((x) => x !== id));
   const clearSquad = () => setSelectedIds([]);
+
+  const handleSave = () => {
+    const record = saveDraftSquad(selectedIds, budget, maxPerClub);
+    setSavedAt(record.savedAt);
+    setJustSaved(true);
+    setTimeout(() => setJustSaved(false), 2000);
+  };
+
+  const handleLoadSaved = () => {
+    const saved = getSavedDraftSquad();
+    if (!saved) return;
+    setSelectedIds(saved.playerIds);
+    setBudget(saved.budget);
+    setMaxPerClub(saved.maxPerClub);
+  };
+
+  const handleDeleteSaved = () => {
+    clearSavedDraftSquad();
+    setSavedAt(null);
+  };
 
   const autoFill = () => {
     const excludeIds = new Set(selectedIds);
@@ -134,14 +158,32 @@ export default function DraftSquad() {
       <h1>🧪 Draft Squad</h1>
       <InfoBanner title="Plan your opening-day squad" icon="🧪">
         Build a full 15-player squad from scratch (no manager ID needed) and get an instant rating —
-        useful for deciding your opening-day team before the season locks in your real squad.
+        useful for deciding your opening-day team before the season locks in your real squad. Saved
+        locally in this browser only — never sent anywhere, and never submitted to your real FPL team.
       </InfoBanner>
+      {savedOnLoad && (
+        <InfoBanner title="Restored your saved draft squad" icon="💾">
+          Last saved {new Date(savedOnLoad.savedAt).toLocaleString()}. Click "Clear squad" to start fresh.
+        </InfoBanner>
+      )}
 
-      <div className="card" style={{ display: "flex", gap: "1rem", flexWrap: "wrap", alignItems: "center" }}>
+      <div className="card flex-row">
         <label>Budget: £<input type="number" step="0.5" value={budget} onChange={(e) => setBudget(Number(e.target.value))} style={{ width: 70 }} />m</label>
         <label>Max per club: <input type="number" min="1" max="15" value={maxPerClub} onChange={(e) => setMaxPerClub(Number(e.target.value))} style={{ width: 50 }} /></label>
         <button onClick={autoFill} disabled={squad.length >= 15}>✨ Auto-suggest remaining players</button>
         <button onClick={clearSquad} disabled={!squad.length}>Clear squad</button>
+      </div>
+
+      <div className="card flex-row">
+        <button onClick={handleSave} disabled={!squad.length}>💾 Save draft squad</button>
+        {justSaved && <span className="muted">✓ Saved</span>}
+        {savedAt && (
+          <>
+            <span className="muted">Last saved: {new Date(savedAt).toLocaleString()}</span>
+            <button onClick={handleLoadSaved}>Load saved squad</button>
+            <button onClick={handleDeleteSaved}>Delete saved squad</button>
+          </>
+        )}
       </div>
 
       <div className="metric-row">
